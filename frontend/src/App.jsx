@@ -5,6 +5,27 @@ function isNumericDtype(dtype) {
   return typeof dtype === 'string' && /(int|float|double|number|decimal)/i.test(dtype)
 }
 
+function formatActionLabel(action, options = {}) {
+  const columnSuffix = options.column ? ` on ${options.column}` : ''
+
+  switch (action) {
+    case 'drop_duplicates':
+      return 'Removed exact duplicate rows'
+    case 'convert_datetime':
+      return `Converted values to datetime${columnSuffix}`
+    case 'drop_missing_rows':
+      return `Dropped rows with missing values${columnSuffix}`
+    case 'fill_missing_fixed':
+      return `Filled missing values with a custom value${columnSuffix}`
+    case 'fill_missing_median':
+      return `Filled missing values with median${columnSuffix}`
+    case 'fill_missing_mode':
+      return `Filled missing values with most common value${columnSuffix}`
+    default:
+      return action
+  }
+}
+
 function normalizeAnalysis(payload) {
   if (!payload || typeof payload !== 'object') {
     throw new Error('The server returned an invalid analysis response.')
@@ -171,12 +192,20 @@ function App() {
         throw new Error(payload.detail || 'Cleaning failed.')
       }
 
+      const nextCleaningMessage =
+        typeof payload.message === 'string' && payload.message.trim()
+          ? payload.message
+          : 'Cleaning completed.'
+
       setHistory((currentHistory) => [
         ...currentHistory,
         {
+          label: formatActionLabel(action, options),
+          action,
+          options,
           file: selectedFile,
           analysis,
-          message: cleaningMessage,
+          message: nextCleaningMessage,
         },
       ])
 
@@ -191,11 +220,7 @@ function App() {
       }
 
       setAnalysis(normalizeAnalysis(payload.analysis))
-      setCleaningMessage(
-        typeof payload.message === 'string' && payload.message.trim()
-          ? payload.message
-          : 'Cleaning completed.',
-      )
+      setCleaningMessage(nextCleaningMessage)
     } catch (requestError) {
       setError(requestError.message || 'Unable to clean the CSV right now.')
     } finally {
@@ -361,6 +386,47 @@ function App() {
             </div>
 
             <div className="details-grid insight-grid">
+              <article className="detail-card">
+                <h3>Applied changes</h3>
+                {history.length > 0 ? (
+                  <div className="history-list">
+                    {history.map((step, index) => (
+                      <article className="history-item" key={`${step.action}-${index}`}>
+                        <div className="history-step">
+                          <span>Step {index + 1}</span>
+                          <strong>{step.label}</strong>
+                        </div>
+                        <p className="history-copy">
+                          {step.message || 'Cleaning step applied to the working dataset.'}
+                        </p>
+                        <p className="history-meta">
+                          Rows after this step started: {step.analysis?.rows ?? 'Unknown'}
+                        </p>
+                      </article>
+                    ))}
+                    <article className="history-item current-step">
+                      <div className="history-step">
+                        <span>Current</span>
+                        <strong>Working dataset</strong>
+                      </div>
+                      <p className="history-copy">
+                        {cleaningMessage || 'This is the latest cleaned version of the dataset.'}
+                      </p>
+                      <p className="history-meta">
+                        Current rows: {analysis.rows} | Current columns: {analysis.columns}
+                      </p>
+                    </article>
+                  </div>
+                ) : (
+                  <div className="empty-state-box">
+                    <p className="empty-state-title">No changes applied yet</p>
+                    <p className="empty-state">
+                      Cleaning steps you apply will appear here as a running history.
+                    </p>
+                  </div>
+                )}
+              </article>
+
               <article className="detail-card">
                 <h3>Detected issues</h3>
                 {issues.length > 0 ? (
