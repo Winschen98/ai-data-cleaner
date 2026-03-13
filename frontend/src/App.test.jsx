@@ -68,13 +68,15 @@ async function analyzeDataset(user, payload = createAnalysisPayload()) {
   await user.upload(fileInput, file)
   await user.click(screen.getByRole('button', { name: /analyze dataset/i }))
 
-  await screen.findByRole('heading', { name: 'sample.csv' })
+  await screen.findByRole('heading', { name: payload.filename })
   return { file }
 }
 
 describe('App', () => {
   beforeEach(() => {
     global.fetch = vi.fn()
+    global.URL.createObjectURL = vi.fn(() => 'blob:mock-url')
+    global.URL.revokeObjectURL = vi.fn()
   })
 
   it('renders analysis results after upload', async () => {
@@ -236,5 +238,249 @@ describe('App', () => {
       expect(screen.getByRole('button', { name: 'Bob' })).toBeTruthy()
     })
     expect(screen.queryByText(/recent changes \(1\)/i)).toBeNull()
+  })
+
+  it('resets to the original analyzed dataset after a cleaning action', async () => {
+    const user = userEvent.setup()
+    const cleanedPayload = {
+      action: 'drop_duplicates',
+      message: 'Removed 1 duplicate row(s).',
+      cleaned_csv: 'name,email,age\nAlice,,30\n',
+      analysis: createAnalysisPayload({
+        rows: 1,
+        duplicate_rows: 0,
+        issues: [
+          {
+            kind: 'missing_values',
+            severity: 'medium',
+            title: 'Missing values detected',
+            detail: '1 column contains blank or missing cells.',
+            columns: ['email'],
+            suggestion:
+              'Review these columns and decide whether to fill, drop, or keep missing values.',
+          },
+        ],
+        preview: [{ name: 'Alice', email: null, age: 30 }],
+      }),
+    }
+
+    global.fetch = vi
+      .fn()
+      .mockImplementationOnce(() => jsonResponse(createAnalysisPayload()))
+      .mockImplementationOnce(() => jsonResponse(cleanedPayload))
+
+    render(<App />)
+
+    const fileInput = screen.getByLabelText(/select csv file/i)
+    const file = new File(['name,email,age\nAlice,,30\nBob,bob@example.com,25\n'], 'sample.csv', {
+      type: 'text/csv',
+    })
+
+    await user.upload(fileInput, file)
+    await user.click(screen.getByRole('button', { name: /analyze dataset/i }))
+    await screen.findByRole('heading', { name: 'sample.csv' })
+
+    await user.click(screen.getByRole('button', { name: /remove exact duplicates/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /reset to original/i })).toBeTruthy()
+    })
+
+    await user.click(screen.getByRole('button', { name: /reset to original/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Bob' })).toBeTruthy()
+    })
+    expect(screen.queryByText(/recent changes \(1\)/i)).toBeNull()
+  })
+
+  it('cancels inline edits without saving a cleaning action', async () => {
+    const user = userEvent.setup()
+
+    await analyzeDataset(user)
+
+    const rows = screen.getAllByRole('row')
+    const secondDataRow = rows[2]
+    await user.click(within(secondDataRow).getByRole('button', { name: '25' }))
+
+    const editorInput = screen.getByDisplayValue('25')
+    await user.clear(editorInput)
+    await user.type(editorInput, '42')
+    await user.click(screen.getByRole('button', { name: /cancel/i }))
+
+    await waitFor(() => {
+      expect(within(secondDataRow).getByRole('button', { name: '25' })).toBeTruthy()
+    })
+    expect(screen.queryByText(/recent changes/i)).toBeNull()
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('submits a custom fill action and updates the preview', async () => {
+    const user = userEvent.setup()
+    const cleanedPayload = {
+      action: 'fill_missing_fixed',
+      message: "Filled 1 missing value(s) in 'email' with 'unknown@example.com'.",
+      cleaned_csv: 'name,email,age\nAlice,unknown@example.com,30\nBob,bob@example.com,25\n',
+      analysis: createAnalysisPayload({
+        missing_values: {
+          name: 0,
+          email: 0,
+          age: 0,
+        },
+        duplicate_rows: 1,
+        issues: [
+          {
+            kind: 'duplicates',
+            severity: 'medium',
+            title: 'Duplicate rows detected',
+            detail: '1 duplicate row was found in the dataset.',
+            columns: [],
+            suggestion: 'Review duplicated rows and consider dropping exact duplicates.',
+          },
+        ],
+        preview: [
+          { name: 'Alice', email: 'unknown@example.com', age: 30 },
+          { name: 'Bob', email: 'bob@example.com', age: 25 },
+        ],
+      }),
+    }
+
+    global.fetch = vi
+      .fn()
+      .mockImplementationOnce(() => jsonResponse(createAnalysisPayload()))
+      .mockImplementationOnce((url, options) => {
+        const body = options.body
+        expect(url).toBe('/api/clean')
+        expect(body.get('action')).toBe('fill_missing_fixed')
+        expect(body.get('column')).toBe('email')
+        expect(body.get('value')).toBe('unknown@example.com')
+
+        return jsonResponse(cleanedPayload)
+      })
+
+    render(<App />)
+
+    const fileInput = screen.getByLabelText(/select csv file/i)
+    const file = new File(['name,email,age\nAlice,,30\nBob,bob@example.com,25\n'], 'sample.csv', {
+      type: 'text/csv',
+    })
+
+    await user.upload(fileInput, file)
+    await user.click(screen.getByRole('button', { name: /analyze dataset/i }))
+    await screen.findByRole('heading', { name: 'sample.csv' })
+
+    await user.type(screen.getByPlaceholderText(/custom fill value/i), 'unknown@example.com')
+    await user.click(screen.getByRole('button', { name: /fill with custom value/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'unknown@example.com' })).toBeTruthy()
+    })
+    expect(
+      screen.getByText(/filled missing values with a custom value on email/i),
+    ).toBeTruthy()
+  })
+
+  it('shows backend cleaning errors without losing the current preview', async () => {
+    const user = userEvent.setup()
+
+    global.fetch = vi
+      .fn()
+      .mockImplementationOnce(() => jsonResponse(createAnalysisPayload()))
+      .mockImplementationOnce(() =>
+        jsonResponse(
+          { detail: "Column 'email' was not found." },
+          false,
+          400,
+        ),
+      )
+
+    render(<App />)
+
+    const fileInput = screen.getByLabelText(/select csv file/i)
+    const file = new File(['name,email,age\nAlice,,30\nBob,bob@example.com,25\n'], 'sample.csv', {
+      type: 'text/csv',
+    })
+
+    await user.upload(fileInput, file)
+    await user.click(screen.getByRole('button', { name: /analyze dataset/i }))
+    await screen.findByRole('heading', { name: 'sample.csv' })
+
+    await user.click(screen.getByRole('button', { name: /drop missing rows/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/column 'email' was not found/i)).toBeTruthy()
+    })
+    expect(screen.getByRole('button', { name: 'Bob' })).toBeTruthy()
+  })
+
+  it('downloads the current csv with a normalized cleaned filename', async () => {
+    const user = userEvent.setup()
+    const originalCreateElement = document.createElement.bind(document)
+    const createdLink = {
+      click: vi.fn(),
+      href: '',
+      download: '',
+    }
+    const createElementSpy = vi
+      .spyOn(document, 'createElement')
+      .mockImplementation((tagName) => {
+        if (tagName === 'a') {
+          return createdLink
+        }
+
+        return originalCreateElement(tagName)
+      })
+
+    const cleanedPayload = {
+      action: 'drop_duplicates',
+      message: 'Removed 1 duplicate row(s).',
+      cleaned_csv: 'name,email,age\nAlice,,30\n',
+      analysis: createAnalysisPayload({
+        filename: 'sample.cleaned.cleaned.csv',
+        rows: 1,
+        duplicate_rows: 0,
+        issues: [
+          {
+            kind: 'missing_values',
+            severity: 'medium',
+            title: 'Missing values detected',
+            detail: '1 column contains blank or missing cells.',
+            columns: ['email'],
+            suggestion:
+              'Review these columns and decide whether to fill, drop, or keep missing values.',
+          },
+        ],
+        preview: [{ name: 'Alice', email: null, age: 30 }],
+      }),
+    }
+
+    global.fetch = vi
+      .fn()
+      .mockImplementationOnce(() => jsonResponse(createAnalysisPayload()))
+      .mockImplementationOnce(() => jsonResponse(cleanedPayload))
+
+    render(<App />)
+
+    const fileInput = screen.getByLabelText(/select csv file/i)
+    const file = new File(['name,email,age\nAlice,,30\nBob,bob@example.com,25\n'], 'sample.csv', {
+      type: 'text/csv',
+    })
+
+    await user.upload(fileInput, file)
+    await user.click(screen.getByRole('button', { name: /analyze dataset/i }))
+    await screen.findByRole('heading', { name: 'sample.csv' })
+
+    await user.click(screen.getByRole('button', { name: /remove exact duplicates/i }))
+    await waitFor(() => {
+      expect(screen.getByText(/recent changes \(1\)/i)).toBeTruthy()
+    })
+
+    await user.click(screen.getByRole('button', { name: /download current csv/i }))
+
+    expect(createElementSpy).toHaveBeenCalledWith('a')
+    expect(global.URL.createObjectURL).toHaveBeenCalledTimes(1)
+    expect(createdLink.download).toBe('sample_cleaned.csv')
+    expect(createdLink.click).toHaveBeenCalledTimes(1)
+    expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
   })
 })
