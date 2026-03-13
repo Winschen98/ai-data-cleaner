@@ -24,6 +24,57 @@ class BackendApiTests(unittest.TestCase):
             )
         }
 
+    def assert_analysis_contract(self, payload):
+        self.assertEqual(
+            set(payload.keys()),
+            {
+                "filename",
+                "rows",
+                "columns",
+                "column_names",
+                "dtypes",
+                "missing_values",
+                "duplicate_rows",
+                "issues",
+                "suggested_actions",
+                "preview",
+            },
+        )
+        self.assertIsInstance(payload["filename"], str)
+        self.assertIsInstance(payload["rows"], int)
+        self.assertIsInstance(payload["columns"], int)
+        self.assertIsInstance(payload["column_names"], list)
+        self.assertIsInstance(payload["dtypes"], dict)
+        self.assertIsInstance(payload["missing_values"], dict)
+        self.assertIsInstance(payload["duplicate_rows"], int)
+        self.assertIsInstance(payload["issues"], list)
+        self.assertIsInstance(payload["suggested_actions"], list)
+        self.assertIsInstance(payload["preview"], list)
+
+        if payload["issues"]:
+            self.assertEqual(
+                set(payload["issues"][0].keys()),
+                {
+                    "kind",
+                    "severity",
+                    "title",
+                    "detail",
+                    "columns",
+                    "suggestion",
+                },
+            )
+
+    def assert_cleaning_contract(self, payload):
+        self.assertEqual(
+            set(payload.keys()),
+            {"action", "message", "cleaned_csv", "analysis"},
+        )
+        self.assertIsInstance(payload["action"], str)
+        self.assertIsInstance(payload["message"], str)
+        self.assertIsInstance(payload["cleaned_csv"], str)
+        self.assertIsInstance(payload["analysis"], dict)
+        self.assert_analysis_contract(payload["analysis"])
+
     def test_analyze_csv_returns_dataset_statistics_and_preview(self):
         response = self.client.post(
             "/analyze",
@@ -204,6 +255,37 @@ class BackendApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("not valid for numeric column", response.json()["detail"])
+
+    def test_analyze_response_contract_stays_stable(self):
+        response = self.client.post(
+            "/analyze",
+            files=self.make_csv_upload(
+                "name,email,age\n"
+                "Alice,,30\n"
+                "Bob,bob@example.com,25\n"
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assert_analysis_contract(response.json())
+
+    def test_clean_response_contract_stays_stable(self):
+        response = self.client.post(
+            "/clean",
+            files=self.make_csv_upload(
+                "name,email,age\n"
+                "Alice,,30\n"
+                "Bob,bob@example.com,25\n"
+            ),
+            data={
+                "action": "fill_missing_fixed",
+                "column": "email",
+                "value": "unknown@example.com",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assert_cleaning_contract(response.json())
 
     def test_analyze_rejects_malformed_csv_upload(self):
         response = self.client.post(
