@@ -153,7 +153,7 @@
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
   gap: 12px;
 }
 
@@ -162,17 +162,18 @@
   border-radius: 18px;
   background: #eff6ff;
   min-width: 120px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .summary-grid span {
-  display: block;
   color: #41506a;
   font-size: 0.9rem;
 }
 
 .summary-grid strong {
-  display: block;
-  margin-top: 6px;
   font-size: 1.8rem;
   color: #10203a;
 }
@@ -624,5 +625,6 @@ tbody tr:hover {
 
   .summary-grid {
     width: 100%;
+    grid-template-columns: 1fr;
   }
 }
