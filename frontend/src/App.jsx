@@ -435,6 +435,26 @@ function App() {
                     </p>
                   ) : null}
                 </div>
+                <div className="preview-history-shell">
+                  {history.length > 0 ? (
+                    <div className="preview-history">
+                      <p className="preview-history-label">
+                        Recent changes ({history.length})
+                      </p>
+                      <div className="preview-history-list">
+                        {history.map((step, index) => (
+                          <article
+                            className="preview-history-item"
+                            key={`${step.action}-${index}`}
+                          >
+                            <strong>{step.label}</strong>
+                            <span>{step.message}</span>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
                 {hasPreview ? (
                   <div className="table-wrap">
                     <table>
@@ -614,47 +634,6 @@ function App() {
                 )}
               </article>
             </div>
-
-            <article className="detail-card">
-              <h3>Applied changes</h3>
-              {history.length > 0 ? (
-                <div className="history-list">
-                  {history.map((step, index) => (
-                    <article className="history-item" key={`${step.action}-${index}`}>
-                      <div className="history-step">
-                        <span>Step {index + 1}</span>
-                        <strong>{step.label}</strong>
-                      </div>
-                      <p className="history-copy">
-                        {step.message || 'Cleaning step applied to the working dataset.'}
-                      </p>
-                      <p className="history-meta">
-                        Rows after this step started: {step.analysis?.rows ?? 'Unknown'}
-                      </p>
-                    </article>
-                  ))}
-                  <article className="history-item current-step">
-                    <div className="history-step">
-                      <span>Current</span>
-                      <strong>Working dataset</strong>
-                    </div>
-                    <p className="history-copy">
-                      {cleaningMessage || 'This is the latest cleaned version of the dataset.'}
-                    </p>
-                    <p className="history-meta">
-                      Current rows: {analysis.rows} | Current columns: {analysis.columns}
-                    </p>
-                  </article>
-                </div>
-              ) : (
-                <div className="empty-state-box">
-                  <p className="empty-state-title">No changes applied yet</p>
-                  <p className="empty-state">
-                    Cleaning steps you apply will appear here as a running history.
-                  </p>
-                </div>
-              )}
-            </article>
 
             <div className="details-grid">
               <article className="detail-card">
