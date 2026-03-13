@@ -3,11 +3,12 @@ import pathlib
 import sys
 import unittest
 
+import pandas as pd
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from main import app
+from main import app, apply_cleaning_action
 
 
 class BackendApiTests(unittest.TestCase):
@@ -253,6 +254,78 @@ class BackendApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("out of range", response.json()["detail"])
+
+    def test_analyze_rejects_non_csv_extension(self):
+        response = self.client.post(
+            "/analyze",
+            files=self.make_csv_upload(
+                "name,email\nAlice,alice@example.com\n",
+                filename="sample.txt",
+            ),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["detail"],
+            "Only CSV uploads are supported.",
+        )
+
+    def test_clean_rejects_unsupported_action(self):
+        response = self.client.post(
+            "/clean",
+            files=self.make_csv_upload(
+                "name,email\nAlice,alice@example.com\n",
+            ),
+            data={"action": "not_a_real_action"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "Unsupported cleaning action.")
+
+    def test_apply_cleaning_action_updates_boolean_cell(self):
+        dataframe = pd.DataFrame({"is_active": [True, False]})
+
+        cleaned_dataframe, message = apply_cleaning_action(
+            dataframe,
+            "update_cell",
+            column="is_active",
+            row_index=1,
+            value="yes",
+        )
+
+        self.assertEqual(cleaned_dataframe.at[1, "is_active"], True)
+        self.assertEqual(message, "Updated row 2, column 'is_active'.")
+
+    def test_apply_cleaning_action_updates_datetime_cell(self):
+        dataframe = pd.DataFrame(
+            {"signup_date": pd.to_datetime(["2024-01-01", "2024-02-01"])}
+        )
+
+        cleaned_dataframe, message = apply_cleaning_action(
+            dataframe,
+            "update_cell",
+            column="signup_date",
+            row_index=0,
+            value="2024-03-15",
+        )
+
+        self.assertEqual(
+            str(cleaned_dataframe.at[0, "signup_date"]),
+            "2024-03-15 00:00:00",
+        )
+        self.assertEqual(message, "Updated row 1, column 'signup_date'.")
+
+    def test_apply_cleaning_action_rejects_invalid_boolean_value(self):
+        dataframe = pd.DataFrame({"is_active": [True, False]})
+
+        with self.assertRaisesRegex(Exception, "not valid for boolean column"):
+            apply_cleaning_action(
+                dataframe,
+                "update_cell",
+                column="is_active",
+                row_index=0,
+                value="maybe",
+            )
 
 
 if __name__ == "__main__":
