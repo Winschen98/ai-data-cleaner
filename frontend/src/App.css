@@ -113,6 +113,12 @@
   border: 1px solid #fecaca;
 }
 
+.status.success {
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
 .results-panel {
   padding: 28px;
   display: grid;
@@ -288,6 +294,23 @@
 
 .action-list li {
   line-height: 1.5;
+}
+
+.secondary-action {
+  margin-top: 18px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font: inherit;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #eff6ff;
+  cursor: pointer;
+}
+
+.secondary-action:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 .preview-card {

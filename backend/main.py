@@ -2,7 +2,7 @@ from io import BytesIO
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 app = FastAPI()
@@ -28,6 +28,12 @@ class DatasetAnalysisResponse(BaseModel):
     issues: list[AnalysisIssue]
     suggested_actions: list[str]
     preview: list[dict[str, object | None]]
+
+
+class CleaningResponse(BaseModel):
+    action: str
+    message: str
+    analysis: DatasetAnalysisResponse
 
 
 def find_analysis_issues(dataframe: pd.DataFrame) -> tuple[list[AnalysisIssue], list[str]]:
@@ -120,25 +126,18 @@ def find_analysis_issues(dataframe: pd.DataFrame) -> tuple[list[AnalysisIssue], 
     return issues, deduped_actions
 
 
-@app.get("/")
-def read_root():
-    return {"message": "AI Data Cleaner backend running"}
-
-
-@app.post("/analyze", response_model=DatasetAnalysisResponse)
-async def analyze_csv(file: UploadFile = File(...)):
+def read_uploaded_csv(file: UploadFile, contents: bytes) -> pd.DataFrame:
     if not file.filename:
         raise HTTPException(status_code=400, detail="A CSV file is required.")
 
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV uploads are supported.")
 
-    contents = await file.read()
     if not contents:
         raise HTTPException(status_code=400, detail="The uploaded CSV is empty.")
 
     try:
-        dataframe = pd.read_csv(BytesIO(contents))
+        return pd.read_csv(BytesIO(contents))
     except pd.errors.EmptyDataError as exc:
         raise HTTPException(status_code=400, detail="The uploaded CSV has no rows.") from exc
     except pd.errors.ParserError as exc:
@@ -152,6 +151,8 @@ async def analyze_csv(file: UploadFile = File(...)):
             detail="The uploaded file is not valid UTF-8 text.",
         ) from exc
 
+
+def build_analysis_response(dataframe: pd.DataFrame, filename: str) -> DatasetAnalysisResponse:
     missing_values = {
         column: int(count)
         for column, count in dataframe.isna().sum().to_dict().items()
@@ -164,7 +165,7 @@ async def analyze_csv(file: UploadFile = File(...)):
     )
 
     return DatasetAnalysisResponse(
-        filename=file.filename,
+        filename=filename,
         rows=int(len(dataframe)),
         columns=int(len(dataframe.columns)),
         column_names=[str(column) for column in dataframe.columns.tolist()],
@@ -174,4 +175,39 @@ async def analyze_csv(file: UploadFile = File(...)):
         issues=issues,
         suggested_actions=suggested_actions,
         preview=preview,
+    )
+
+
+@app.get("/")
+def read_root():
+    return {"message": "AI Data Cleaner backend running"}
+
+
+@app.post("/analyze", response_model=DatasetAnalysisResponse)
+async def analyze_csv(file: UploadFile = File(...)):
+    contents = await file.read()
+    dataframe = read_uploaded_csv(file, contents)
+    return build_analysis_response(dataframe, file.filename)
+
+
+@app.post("/clean", response_model=CleaningResponse)
+async def clean_csv(file: UploadFile = File(...), action: str = Form(...)):
+    contents = await file.read()
+    dataframe = read_uploaded_csv(file, contents)
+
+    if action != "drop_duplicates":
+        raise HTTPException(status_code=400, detail="Unsupported cleaning action.")
+
+    original_rows = int(len(dataframe))
+    cleaned_dataframe = dataframe.drop_duplicates().reset_index(drop=True)
+    removed_rows = original_rows - int(len(cleaned_dataframe))
+
+    return CleaningResponse(
+        action=action,
+        message=(
+            f"Removed {removed_rows} duplicate row(s)."
+            if removed_rows > 0
+            else "No duplicate rows were removed."
+        ),
+        analysis=build_analysis_response(cleaned_dataframe, file.filename),
     )

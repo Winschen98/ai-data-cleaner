@@ -54,6 +54,8 @@ function App() {
   const [analysis, setAnalysis] = useState(null)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isCleaning, setIsCleaning] = useState(false)
+  const [cleaningMessage, setCleaningMessage] = useState('')
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -66,6 +68,7 @@ function App() {
     setIsLoading(true)
     setError('')
     setAnalysis(null)
+    setCleaningMessage('')
 
     const formData = new FormData()
     formData.append('file', selectedFile)
@@ -100,6 +103,51 @@ function App() {
     setSelectedFile(nextFile)
     setError('')
     setAnalysis(null)
+    setCleaningMessage('')
+  }
+
+  async function handleClean(action) {
+    if (!selectedFile) {
+      setError('Choose a CSV file before running a cleaning action.')
+      return
+    }
+
+    setIsCleaning(true)
+    setError('')
+    setCleaningMessage('')
+
+    const formData = new FormData()
+    formData.append('file', selectedFile)
+    formData.append('action', action)
+
+    try {
+      const response = await fetch('/api/clean', {
+        method: 'POST',
+        body: formData,
+      })
+
+      let payload = null
+      try {
+        payload = await response.json()
+      } catch {
+        throw new Error('The server returned a non-JSON response.')
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Cleaning failed.')
+      }
+
+      setAnalysis(normalizeAnalysis(payload.analysis))
+      setCleaningMessage(
+        typeof payload.message === 'string' && payload.message.trim()
+          ? payload.message
+          : 'Cleaning completed.',
+      )
+    } catch (requestError) {
+      setError(requestError.message || 'Unable to clean the CSV right now.')
+    } finally {
+      setIsCleaning(false)
+    }
   }
 
   const columnNames = analysis?.columnNames ?? []
@@ -149,6 +197,7 @@ function App() {
         </form>
 
         {error ? <p className="status error">{error}</p> : null}
+        {cleaningMessage ? <p className="status success">{cleaningMessage}</p> : null}
       </section>
 
       <section className="results-panel">
@@ -215,11 +264,23 @@ function App() {
               <article className="detail-card">
                 <h3>Suggested actions</h3>
                 {suggestedActions.length > 0 ? (
-                  <ol className="action-list">
-                    {suggestedActions.map((action) => (
-                      <li key={action}>{action}</li>
-                    ))}
-                  </ol>
+                  <>
+                    <ol className="action-list">
+                      {suggestedActions.map((action) => (
+                        <li key={action}>{action}</li>
+                      ))}
+                    </ol>
+                    {analysis.duplicateRows > 0 ? (
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        onClick={() => handleClean('drop_duplicates')}
+                        disabled={isCleaning || isLoading}
+                      >
+                        {isCleaning ? 'Removing duplicates...' : 'Remove exact duplicates'}
+                      </button>
+                    ) : null}
+                  </>
                 ) : (
                   <div className="empty-state-box">
                     <p className="empty-state-title">No actions suggested</p>
