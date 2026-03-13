@@ -284,6 +284,65 @@
   color: #10203a;
 }
 
+.issue-actions,
+.column-action-groups {
+  margin-top: 16px;
+}
+
+.column-action-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.column-action-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.column-action-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.column-action-header strong {
+  color: #10203a;
+}
+
+.column-action-header span {
+  color: #41506a;
+  font-size: 0.9rem;
+}
+
+.inline-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.custom-fill-row {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.custom-fill-row input {
+  flex: 1 1 220px;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 11px 14px;
+  font: inherit;
+  color: #10203a;
+  background: #ffffff;
+}
+
 .action-list {
   margin: 0;
   padding-left: 20px;
@@ -306,6 +365,12 @@
   color: #1d4ed8;
   background: #eff6ff;
   cursor: pointer;
+}
+
+.inline-actions .secondary-action,
+.custom-fill-row .secondary-action,
+.issue-actions .secondary-action {
+  margin-top: 0;
 }
 
 .secondary-action:disabled {

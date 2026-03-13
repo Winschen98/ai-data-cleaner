@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import './App.css'
 
+function isNumericDtype(dtype) {
+  return typeof dtype === 'string' && /(int|float|double|number|decimal)/i.test(dtype)
+}
+
 function normalizeAnalysis(payload) {
   if (!payload || typeof payload !== 'object') {
     throw new Error('The server returned an invalid analysis response.')
@@ -56,6 +60,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [isCleaning, setIsCleaning] = useState(false)
   const [cleaningMessage, setCleaningMessage] = useState('')
+  const [customFillValues, setCustomFillValues] = useState({})
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -104,9 +109,10 @@ function App() {
     setError('')
     setAnalysis(null)
     setCleaningMessage('')
+    setCustomFillValues({})
   }
 
-  async function handleClean(action) {
+  async function handleClean(action, options = {}) {
     if (!selectedFile) {
       setError('Choose a CSV file before running a cleaning action.')
       return
@@ -119,6 +125,12 @@ function App() {
     const formData = new FormData()
     formData.append('file', selectedFile)
     formData.append('action', action)
+    if (options.column) {
+      formData.append('column', options.column)
+    }
+    if (options.value !== undefined) {
+      formData.append('value', options.value)
+    }
 
     try {
       const response = await fetch('/api/clean', {
@@ -148,6 +160,13 @@ function App() {
     } finally {
       setIsCleaning(false)
     }
+  }
+
+  function handleCustomFillValueChange(column, value) {
+    setCustomFillValues((currentValues) => ({
+      ...currentValues,
+      [column]: value,
+    }))
   }
 
   const columnNames = analysis?.columnNames ?? []
@@ -248,6 +267,103 @@ function App() {
                         <p className="issue-suggestion">
                           {issue.suggestion || 'Review this dataset section before cleaning.'}
                         </p>
+                        {issue.kind === 'date_candidate' &&
+                        Array.isArray(issue.columns) &&
+                        issue.columns.length > 0 ? (
+                          <div className="issue-actions">
+                            {issue.columns.map((column) => (
+                              <button
+                                className="secondary-action"
+                                type="button"
+                                key={`convert-${column}`}
+                                onClick={() =>
+                                  handleClean('convert_datetime', { column })
+                                }
+                                disabled={isCleaning || isLoading}
+                              >
+                                {isCleaning ? 'Applying...' : `Convert ${column} to datetime`}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                        {issue.kind === 'missing_values' &&
+                        Array.isArray(issue.columns) &&
+                        issue.columns.length > 0 ? (
+                          <div className="column-action-groups">
+                            {issue.columns.map((column) => {
+                              const dtype = analysis.dtypes[column]
+                              const numericColumn = isNumericDtype(dtype)
+                              const customValue = customFillValues[column] ?? ''
+
+                              return (
+                                <div className="column-action-card" key={`missing-${column}`}>
+                                  <div className="column-action-header">
+                                    <strong>{column}</strong>
+                                    <span>{dtype || 'unknown type'}</span>
+                                  </div>
+                                  <div className="inline-actions">
+                                    <button
+                                      className="secondary-action"
+                                      type="button"
+                                      onClick={() =>
+                                        handleClean('drop_missing_rows', { column })
+                                      }
+                                      disabled={isCleaning || isLoading}
+                                    >
+                                      Drop missing rows
+                                    </button>
+                                    {numericColumn ? (
+                                      <button
+                                        className="secondary-action"
+                                        type="button"
+                                        onClick={() =>
+                                          handleClean('fill_missing_median', { column })
+                                        }
+                                        disabled={isCleaning || isLoading}
+                                      >
+                                        Fill with median
+                                      </button>
+                                    ) : (
+                                      <button
+                                        className="secondary-action"
+                                        type="button"
+                                        onClick={() =>
+                                          handleClean('fill_missing_mode', { column })
+                                        }
+                                        disabled={isCleaning || isLoading}
+                                      >
+                                        Fill with most common value
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div className="custom-fill-row">
+                                    <input
+                                      type="text"
+                                      value={customValue}
+                                      onChange={(event) =>
+                                        handleCustomFillValueChange(column, event.target.value)
+                                      }
+                                      placeholder="Custom fill value"
+                                    />
+                                    <button
+                                      className="secondary-action"
+                                      type="button"
+                                      onClick={() =>
+                                        handleClean('fill_missing_fixed', {
+                                          column,
+                                          value: customValue,
+                                        })
+                                      }
+                                      disabled={isCleaning || isLoading || customValue === ''}
+                                    >
+                                      Fill with custom value
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : null}
                       </article>
                     ))}
                   </div>

@@ -178,6 +178,119 @@ def build_analysis_response(dataframe: pd.DataFrame, filename: str) -> DatasetAn
     )
 
 
+def require_column(dataframe: pd.DataFrame, column: str | None) -> str:
+    if not column:
+        raise HTTPException(status_code=400, detail="A target column is required.")
+
+    if column not in dataframe.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{column}' was not found.")
+
+    return column
+
+
+def apply_cleaning_action(
+    dataframe: pd.DataFrame,
+    action: str,
+    column: str | None = None,
+    value: str | None = None,
+) -> tuple[pd.DataFrame, str]:
+    cleaned_dataframe = dataframe.copy()
+
+    if action == "drop_duplicates":
+        original_rows = int(len(cleaned_dataframe))
+        cleaned_dataframe = cleaned_dataframe.drop_duplicates().reset_index(drop=True)
+        removed_rows = original_rows - int(len(cleaned_dataframe))
+        if removed_rows > 0:
+            return cleaned_dataframe, f"Removed {removed_rows} duplicate row(s)."
+        return cleaned_dataframe, "No duplicate rows were removed."
+
+    if action == "convert_datetime":
+        target_column = require_column(cleaned_dataframe, column)
+        converted = pd.to_datetime(cleaned_dataframe[target_column], errors="coerce")
+        successful_conversions = int(converted.notna().sum())
+        if successful_conversions == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Column '{target_column}' could not be converted to datetime values.",
+            )
+
+        cleaned_dataframe[target_column] = converted
+        return (
+            cleaned_dataframe,
+            f"Converted column '{target_column}' to datetime for {successful_conversions} row(s).",
+        )
+
+    if action == "drop_missing_rows":
+        target_column = require_column(cleaned_dataframe, column)
+        original_rows = int(len(cleaned_dataframe))
+        cleaned_dataframe = cleaned_dataframe.dropna(subset=[target_column]).reset_index(
+            drop=True
+        )
+        removed_rows = original_rows - int(len(cleaned_dataframe))
+        return (
+            cleaned_dataframe,
+            f"Removed {removed_rows} row(s) missing values in '{target_column}'.",
+        )
+
+    if action == "fill_missing_fixed":
+        target_column = require_column(cleaned_dataframe, column)
+        if value is None:
+            raise HTTPException(
+                status_code=400,
+                detail="A replacement value is required for fixed-value fills.",
+            )
+
+        missing_before = int(cleaned_dataframe[target_column].isna().sum())
+        cleaned_dataframe[target_column] = cleaned_dataframe[target_column].fillna(value)
+        return (
+            cleaned_dataframe,
+            f"Filled {missing_before} missing value(s) in '{target_column}' with '{value}'.",
+        )
+
+    if action == "fill_missing_median":
+        target_column = require_column(cleaned_dataframe, column)
+        numeric_series = pd.to_numeric(cleaned_dataframe[target_column], errors="coerce")
+        if numeric_series.notna().sum() == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Column '{target_column}' does not contain numeric values for median fill.",
+            )
+
+        median_value = numeric_series.median()
+        missing_before = int(cleaned_dataframe[target_column].isna().sum())
+        cleaned_dataframe[target_column] = numeric_series.fillna(median_value)
+        return (
+            cleaned_dataframe,
+            f"Filled {missing_before} missing value(s) in '{target_column}' with median {median_value}.",
+        )
+
+    if action == "fill_missing_mode":
+        target_column = require_column(cleaned_dataframe, column)
+        non_null_values = cleaned_dataframe[target_column].dropna()
+        if non_null_values.empty:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Column '{target_column}' has no non-empty values available for mode fill.",
+            )
+
+        mode_values = non_null_values.mode()
+        if mode_values.empty:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Column '{target_column}' has no mode value available for filling.",
+            )
+
+        fill_value = mode_values.iloc[0]
+        missing_before = int(cleaned_dataframe[target_column].isna().sum())
+        cleaned_dataframe[target_column] = cleaned_dataframe[target_column].fillna(fill_value)
+        return (
+            cleaned_dataframe,
+            f"Filled {missing_before} missing value(s) in '{target_column}' with mode '{fill_value}'.",
+        )
+
+    raise HTTPException(status_code=400, detail="Unsupported cleaning action.")
+
+
 @app.get("/")
 def read_root():
     return {"message": "AI Data Cleaner backend running"}
@@ -191,23 +304,18 @@ async def analyze_csv(file: UploadFile = File(...)):
 
 
 @app.post("/clean", response_model=CleaningResponse)
-async def clean_csv(file: UploadFile = File(...), action: str = Form(...)):
+async def clean_csv(
+    file: UploadFile = File(...),
+    action: str = Form(...),
+    column: str | None = Form(default=None),
+    value: str | None = Form(default=None),
+):
     contents = await file.read()
     dataframe = read_uploaded_csv(file, contents)
-
-    if action != "drop_duplicates":
-        raise HTTPException(status_code=400, detail="Unsupported cleaning action.")
-
-    original_rows = int(len(dataframe))
-    cleaned_dataframe = dataframe.drop_duplicates().reset_index(drop=True)
-    removed_rows = original_rows - int(len(cleaned_dataframe))
+    cleaned_dataframe, message = apply_cleaning_action(dataframe, action, column, value)
 
     return CleaningResponse(
         action=action,
-        message=(
-            f"Removed {removed_rows} duplicate row(s)."
-            if removed_rows > 0
-            else "No duplicate rows were removed."
-        ),
+        message=message,
         analysis=build_analysis_response(cleaned_dataframe, file.filename),
     )
