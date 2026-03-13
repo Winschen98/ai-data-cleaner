@@ -57,6 +57,12 @@
   gap: 18px;
 }
 
+.workspace-meta {
+  margin: 16px 0 0;
+  color: #41506a;
+  font-size: 0.95rem;
+}
+
 .file-picker {
   display: grid;
   gap: 10px;

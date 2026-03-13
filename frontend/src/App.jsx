@@ -61,6 +61,8 @@ function App() {
   const [isCleaning, setIsCleaning] = useState(false)
   const [cleaningMessage, setCleaningMessage] = useState('')
   const [customFillValues, setCustomFillValues] = useState({})
+  const [originalSnapshot, setOriginalSnapshot] = useState(null)
+  const [history, setHistory] = useState([])
 
   function buildCleanedFilename(filename) {
     if (typeof filename !== 'string' || filename.trim() === '') {
@@ -107,7 +109,13 @@ function App() {
         throw new Error(payload.detail || 'Analysis failed.')
       }
 
-      setAnalysis(normalizeAnalysis(payload))
+      const normalizedAnalysis = normalizeAnalysis(payload)
+      setAnalysis(normalizedAnalysis)
+      setOriginalSnapshot({
+        file: selectedFile,
+        analysis: normalizedAnalysis,
+      })
+      setHistory([])
     } catch (requestError) {
       setError(requestError.message || 'Unable to analyze the CSV right now.')
     } finally {
@@ -122,6 +130,8 @@ function App() {
     setAnalysis(null)
     setCleaningMessage('')
     setCustomFillValues({})
+    setOriginalSnapshot(null)
+    setHistory([])
   }
 
   async function handleClean(action, options = {}) {
@@ -161,6 +171,15 @@ function App() {
         throw new Error(payload.detail || 'Cleaning failed.')
       }
 
+      setHistory((currentHistory) => [
+        ...currentHistory,
+        {
+          file: selectedFile,
+          analysis,
+          message: cleaningMessage,
+        },
+      ])
+
       if (typeof payload.cleaned_csv === 'string') {
         const nextFilename = buildCleanedFilename(
           payload.analysis?.filename || selectedFile.name,
@@ -189,6 +208,31 @@ function App() {
       ...currentValues,
       [column]: value,
     }))
+  }
+
+  function handleUndo() {
+    if (history.length === 0) {
+      return
+    }
+
+    const previousSnapshot = history[history.length - 1]
+    setHistory((currentHistory) => currentHistory.slice(0, -1))
+    setSelectedFile(previousSnapshot.file)
+    setAnalysis(previousSnapshot.analysis)
+    setCleaningMessage('Reverted the most recent cleaning action.')
+    setError('')
+  }
+
+  function handleReset() {
+    if (!originalSnapshot) {
+      return
+    }
+
+    setSelectedFile(originalSnapshot.file)
+    setAnalysis(originalSnapshot.analysis)
+    setHistory([])
+    setCleaningMessage('Reset to the original analyzed dataset.')
+    setError('')
   }
 
   function handleDownloadCurrentFile() {
@@ -246,14 +290,32 @@ function App() {
             </p>
             <div className="primary-actions">
               {analysis ? (
-                <button
-                  className="download-action"
-                  type="button"
-                  onClick={handleDownloadCurrentFile}
-                  disabled={isLoading || isCleaning || !selectedFile}
-                >
-                  Download current CSV
-                </button>
+                <>
+                  <button
+                    className="download-action"
+                    type="button"
+                    onClick={handleDownloadCurrentFile}
+                    disabled={isLoading || isCleaning || !selectedFile}
+                  >
+                    Download current CSV
+                  </button>
+                  <button
+                    className="download-action"
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={isLoading || isCleaning || history.length === 0}
+                  >
+                    Undo last step
+                  </button>
+                  <button
+                    className="download-action"
+                    type="button"
+                    onClick={handleReset}
+                    disabled={isLoading || isCleaning || !originalSnapshot}
+                  >
+                    Reset to original
+                  </button>
+                </>
               ) : null}
               <button type="submit" disabled={isLoading}>
                 {isLoading ? 'Analyzing...' : 'Analyze dataset'}
@@ -261,6 +323,14 @@ function App() {
             </div>
           </div>
         </form>
+
+        {analysis ? (
+          <p className="workspace-meta">
+            {history.length > 0
+              ? `${history.length} change${history.length === 1 ? '' : 's'} available to undo.`
+              : 'You are viewing the current working dataset.'}
+          </p>
+        ) : null}
 
         {error ? <p className="status error">{error}</p> : null}
         {cleaningMessage ? <p className="status success">{cleaningMessage}</p> : null}
