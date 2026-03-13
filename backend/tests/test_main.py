@@ -103,6 +103,15 @@ class BackendApiTests(unittest.TestCase):
             any(issue["kind"] == "duplicates" for issue in payload["issues"])
         )
 
+    def test_root_healthcheck_returns_running_message(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"message": "AI Data Cleaner backend running"},
+        )
+
     def test_clean_drop_duplicates_removes_duplicate_rows(self):
         response = self.client.post(
             "/clean",

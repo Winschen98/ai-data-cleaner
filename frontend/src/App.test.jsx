@@ -79,6 +79,18 @@ describe('App', () => {
     global.URL.revokeObjectURL = vi.fn()
   })
 
+  it('renders the initial empty-state workflow', () => {
+    render(<App />)
+
+    expect(
+      screen.getByRole('heading', {
+        name: /upload a csv and inspect the dataset in seconds/i,
+      }),
+    ).toBeTruthy()
+    expect(screen.getByText(/no dataset analyzed yet/i)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /analyze dataset/i })).toBeTruthy()
+  })
+
   it('renders analysis results after upload', async () => {
     const user = userEvent.setup()
 
