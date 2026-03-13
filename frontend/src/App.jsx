@@ -62,6 +62,18 @@ function App() {
   const [cleaningMessage, setCleaningMessage] = useState('')
   const [customFillValues, setCustomFillValues] = useState({})
 
+  function buildCleanedFilename(filename) {
+    if (typeof filename !== 'string' || filename.trim() === '') {
+      return 'cleaned-data.csv'
+    }
+
+    if (filename.toLowerCase().endsWith('.csv')) {
+      return filename.replace(/\.csv$/i, '.cleaned.csv')
+    }
+
+    return `${filename}.cleaned.csv`
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
 
@@ -149,6 +161,16 @@ function App() {
         throw new Error(payload.detail || 'Cleaning failed.')
       }
 
+      if (typeof payload.cleaned_csv === 'string') {
+        const nextFilename = buildCleanedFilename(
+          payload.analysis?.filename || selectedFile.name,
+        )
+        const nextFile = new File([payload.cleaned_csv], nextFilename, {
+          type: 'text/csv',
+        })
+        setSelectedFile(nextFile)
+      }
+
       setAnalysis(normalizeAnalysis(payload.analysis))
       setCleaningMessage(
         typeof payload.message === 'string' && payload.message.trim()
@@ -167,6 +189,19 @@ function App() {
       ...currentValues,
       [column]: value,
     }))
+  }
+
+  function handleDownloadCurrentFile() {
+    if (!selectedFile) {
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(selectedFile)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = selectedFile.name
+    link.click()
+    URL.revokeObjectURL(objectUrl)
   }
 
   const columnNames = analysis?.columnNames ?? []
@@ -209,9 +244,21 @@ function App() {
             <p className="file-name">
               {selectedFile ? selectedFile.name : 'No file selected yet'}
             </p>
-            <button type="submit" disabled={isLoading}>
-              {isLoading ? 'Analyzing...' : 'Analyze dataset'}
-            </button>
+            <div className="primary-actions">
+              {analysis ? (
+                <button
+                  className="download-action"
+                  type="button"
+                  onClick={handleDownloadCurrentFile}
+                  disabled={isLoading || isCleaning || !selectedFile}
+                >
+                  Download current CSV
+                </button>
+              ) : null}
+              <button type="submit" disabled={isLoading}>
+                {isLoading ? 'Analyzing...' : 'Analyze dataset'}
+              </button>
+            </div>
           </div>
         </form>
 

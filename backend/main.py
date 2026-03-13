@@ -33,6 +33,7 @@ class DatasetAnalysisResponse(BaseModel):
 class CleaningResponse(BaseModel):
     action: str
     message: str
+    cleaned_csv: str
     analysis: DatasetAnalysisResponse
 
 
@@ -317,5 +318,6 @@ async def clean_csv(
     return CleaningResponse(
         action=action,
         message=message,
+        cleaned_csv=cleaned_dataframe.to_csv(index=False),
         analysis=build_analysis_response(cleaned_dataframe, file.filename),
     )

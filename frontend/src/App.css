@@ -85,6 +85,12 @@
   color: #41506a;
 }
 
+.primary-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .upload-actions button {
   border: none;
   border-radius: 999px;
@@ -94,6 +100,12 @@
   color: #ffffff;
   background: linear-gradient(135deg, #2563eb 0%, #0f172a 100%);
   cursor: pointer;
+}
+
+.download-action {
+  border: 1px solid #bfdbfe;
+  background: #ffffff;
+  color: #1d4ed8;
 }
 
 .upload-actions button:disabled {
