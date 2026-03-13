@@ -95,6 +95,53 @@ class BackendApiTests(unittest.TestCase):
             "unknown@example.com",
         )
 
+    def test_clean_drop_missing_rows_removes_rows_missing_target_column(self):
+        response = self.client.post(
+            "/clean",
+            files=self.make_csv_upload(
+                "name,email\n"
+                "Alice,\n"
+                "Bob,bob@example.com\n"
+                "Cara,\n"
+            ),
+            data={
+                "action": "drop_missing_rows",
+                "column": "email",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        self.assertEqual(payload["analysis"]["rows"], 1)
+        self.assertEqual(payload["analysis"]["missing_values"]["email"], 0)
+        self.assertEqual(payload["analysis"]["preview"][0]["name"], "Bob")
+
+    def test_clean_convert_datetime_changes_column_dtype(self):
+        response = self.client.post(
+            "/clean",
+            files=self.make_csv_upload(
+                "name,signup_date\n"
+                "Alice,2024-01-15\n"
+                "Bob,2024-02-03\n"
+            ),
+            data={
+                "action": "convert_datetime",
+                "column": "signup_date",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        self.assertTrue(
+            payload["analysis"]["dtypes"]["signup_date"].startswith("datetime64[")
+        )
+        self.assertIn(
+            "Converted column 'signup_date' to datetime",
+            payload["message"],
+        )
+
     def test_clean_update_cell_coerces_numeric_value(self):
         response = self.client.post(
             "/clean",
@@ -156,6 +203,56 @@ class BackendApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("not valid for numeric column", response.json()["detail"])
+
+    def test_analyze_rejects_malformed_csv_upload(self):
+        response = self.client.post(
+            "/analyze",
+            files=self.make_csv_upload('name,email\n"Alice,bad@example.com\n'),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["detail"],
+            "The uploaded file could not be parsed as CSV.",
+        )
+
+    def test_clean_rejects_missing_target_column(self):
+        response = self.client.post(
+            "/clean",
+            files=self.make_csv_upload(
+                "name,email\n"
+                "Alice,alice@example.com\n"
+            ),
+            data={
+                "action": "fill_missing_fixed",
+                "column": "missing_column",
+                "value": "x",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["detail"],
+            "Column 'missing_column' was not found.",
+        )
+
+    def test_clean_rejects_out_of_range_row_index(self):
+        response = self.client.post(
+            "/clean",
+            files=self.make_csv_upload(
+                "name,age\n"
+                "Alice,30\n"
+            ),
+            data={
+                "action": "update_cell",
+                "column": "age",
+                "row_index": "9",
+                "value": "42",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("out of range", response.json()["detail"])
 
 
 if __name__ == "__main__":
