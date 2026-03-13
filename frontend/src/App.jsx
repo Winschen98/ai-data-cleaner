@@ -293,7 +293,6 @@ function App() {
   const dtypeEntries = analysis ? Object.entries(analysis.dtypes) : []
   const missingValueEntries = analysis ? Object.entries(analysis.missingValues) : []
   const issues = analysis?.issues ?? []
-  const suggestedActions = analysis?.suggestedActions ?? []
 
   return (
     <main className="app-shell">
@@ -485,6 +484,18 @@ function App() {
                             ))}
                           </div>
                         ) : null}
+                        {issue.kind === 'duplicates' ? (
+                          <div className="issue-actions">
+                            <button
+                              className="secondary-action"
+                              type="button"
+                              onClick={() => handleClean('drop_duplicates')}
+                              disabled={isCleaning || isLoading}
+                            >
+                              {isCleaning ? 'Removing duplicates...' : 'Remove exact duplicates'}
+                            </button>
+                          </div>
+                        ) : null}
                         {issue.kind === 'missing_values' &&
                         Array.isArray(issue.columns) &&
                         issue.columns.length > 0 ? (
@@ -571,36 +582,6 @@ function App() {
                     <p className="empty-state-title">No issues flagged</p>
                     <p className="empty-state">
                       This dataset did not trigger any lightweight heuristics yet.
-                    </p>
-                  </div>
-                )}
-              </article>
-
-              <article className="detail-card">
-                <h3>Suggested actions</h3>
-                {suggestedActions.length > 0 ? (
-                  <>
-                    <ol className="action-list">
-                      {suggestedActions.map((action) => (
-                        <li key={action}>{action}</li>
-                      ))}
-                    </ol>
-                    {analysis.duplicateRows > 0 ? (
-                      <button
-                        className="secondary-action"
-                        type="button"
-                        onClick={() => handleClean('drop_duplicates')}
-                        disabled={isCleaning || isLoading}
-                      >
-                        {isCleaning ? 'Removing duplicates...' : 'Remove exact duplicates'}
-                      </button>
-                    ) : null}
-                  </>
-                ) : (
-                  <div className="empty-state-box">
-                    <p className="empty-state-title">No actions suggested</p>
-                    <p className="empty-state">
-                      Upload another dataset or expand the backend heuristics to surface more guidance.
                     </p>
                   </div>
                 )}
