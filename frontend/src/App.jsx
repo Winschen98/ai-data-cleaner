@@ -3,6 +3,8 @@ import './App.css'
 
 function formatActionLabel(action, options = {}) {
   const columnSuffix = options.column ? ` on ${options.column}` : ''
+  const rowSuffix =
+    Number.isInteger(options.rowIndex) ? ` at row ${options.rowIndex + 1}` : ''
 
   switch (action) {
     case 'drop_duplicates':
@@ -13,6 +15,10 @@ function formatActionLabel(action, options = {}) {
       return `Dropped rows with missing values${columnSuffix}`
     case 'fill_missing_fixed':
       return `Filled missing values with a custom value${columnSuffix}`
+    case 'update_cell':
+      return `Updated cell${columnSuffix}${rowSuffix}`
+    case 'clear_cell':
+      return `Cleared cell${columnSuffix}${rowSuffix}`
     case 'fill_missing_median':
       return `Filled missing values with median${columnSuffix}`
     case 'fill_missing_mode':
@@ -79,17 +85,19 @@ function App() {
   const [history, setHistory] = useState([])
   const [dismissedMissingColumns, setDismissedMissingColumns] = useState([])
   const [duplicatesDismissed, setDuplicatesDismissed] = useState(false)
+  const [editingCell, setEditingCell] = useState(null)
+  const [editingValue, setEditingValue] = useState('')
 
   function buildCleanedFilename(filename) {
     if (typeof filename !== 'string' || filename.trim() === '') {
       return 'cleaned-data.csv'
     }
 
-    if (filename.toLowerCase().endsWith('.csv')) {
-      return filename.replace(/\.csv$/i, '.cleaned.csv')
-    }
+    const trimmedFilename = filename.trim()
+    const withoutCsv = trimmedFilename.replace(/\.csv$/i, '')
+    const normalizedBase = withoutCsv.replace(/([._-]cleaned)+$/i, '')
 
-    return `${filename}.cleaned.csv`
+    return `${normalizedBase}_cleaned.csv`
   }
 
   async function handleSubmit(event) {
@@ -134,6 +142,8 @@ function App() {
       setHistory([])
       setDismissedMissingColumns([])
       setDuplicatesDismissed(false)
+      setEditingCell(null)
+      setEditingValue('')
     } catch (requestError) {
       setError(requestError.message || 'Unable to analyze the CSV right now.')
     } finally {
@@ -152,6 +162,8 @@ function App() {
     setHistory([])
     setDismissedMissingColumns([])
     setDuplicatesDismissed(false)
+    setEditingCell(null)
+    setEditingValue('')
   }
 
   async function handleClean(action, options = {}) {
@@ -172,6 +184,9 @@ function App() {
     }
     if (options.value !== undefined) {
       formData.append('value', options.value)
+    }
+    if (Number.isInteger(options.rowIndex)) {
+      formData.append('row_index', options.rowIndex)
     }
 
     try {
@@ -222,6 +237,8 @@ function App() {
       setCleaningMessage(nextCleaningMessage)
       setDismissedMissingColumns([])
       setDuplicatesDismissed(false)
+      setEditingCell(null)
+      setEditingValue('')
       requestAnimationFrame(() => {
         previewRef.current?.scrollIntoView({
           behavior: 'smooth',
@@ -256,6 +273,32 @@ function App() {
     setError('')
   }
 
+  function handleEditStart(rowIndex, column, currentValue) {
+    setEditingCell({ rowIndex, column })
+    setEditingValue(currentValue == null || currentValue === '' ? '' : String(currentValue))
+  }
+
+  function handleEditCancel() {
+    setEditingCell(null)
+    setEditingValue('')
+  }
+
+  function handleEditSave(rowIndex, column) {
+    if (editingValue === '') {
+      handleClean('clear_cell', {
+        rowIndex,
+        column,
+      })
+      return
+    }
+
+    handleClean('update_cell', {
+      rowIndex,
+      column,
+      value: editingValue,
+    })
+  }
+
   function handleUndo() {
     if (history.length === 0) {
       return
@@ -269,6 +312,8 @@ function App() {
     setError('')
     setDismissedMissingColumns([])
     setDuplicatesDismissed(false)
+    setEditingCell(null)
+    setEditingValue('')
   }
 
   function handleReset() {
@@ -283,6 +328,8 @@ function App() {
     setError('')
     setDismissedMissingColumns([])
     setDuplicatesDismissed(false)
+    setEditingCell(null)
+    setEditingValue('')
   }
 
   function handleDownloadCurrentFile() {
@@ -470,9 +517,49 @@ function App() {
                           <tr key={index}>
                             {previewColumns.map((column) => (
                               <td key={`${index}-${column}`}>
-                                {row[column] == null || row[column] === ''
-                                  ? 'Empty'
-                                  : String(row[column])}
+                                {editingCell?.rowIndex === index &&
+                                editingCell?.column === column ? (
+                                  <div className="cell-editor">
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      value={editingValue}
+                                      onChange={(event) =>
+                                        setEditingValue(event.target.value)
+                                      }
+                                    />
+                                    <div className="cell-editor-actions">
+                                      <button
+                                        className="cell-action"
+                                        type="button"
+                                        onClick={() => handleEditSave(index, column)}
+                                        disabled={isCleaning || isLoading}
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        className="cell-action secondary"
+                                        type="button"
+                                        onClick={handleEditCancel}
+                                        disabled={isCleaning || isLoading}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    className={`table-cell-button${
+                                      row[column] == null || row[column] === '' ? ' empty' : ''
+                                    }`}
+                                    type="button"
+                                    onClick={() => handleEditStart(index, column, row[column])}
+                                  >
+                                    {row[column] == null || row[column] === ''
+                                      ? 'Empty'
+                                      : String(row[column])}
+                                  </button>
+                                )}
                               </td>
                             ))}
                           </tr>

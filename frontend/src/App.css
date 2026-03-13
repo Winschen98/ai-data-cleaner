@@ -515,6 +515,61 @@ td {
   color: #41506a;
 }
 
+.table-cell-button {
+  width: 100%;
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.table-cell-button.empty {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.cell-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.cell-editor input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: inherit;
+  color: #10203a;
+  background: #ffffff;
+}
+
+.cell-editor-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cell-action {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #ffffff;
+  background: #2563eb;
+  cursor: pointer;
+}
+
+.cell-action.secondary {
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
 tbody tr:nth-child(even) {
   background: #fbfdff;
 }

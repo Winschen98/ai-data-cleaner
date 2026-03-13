@@ -189,11 +189,62 @@ def require_column(dataframe: pd.DataFrame, column: str | None) -> str:
     return column
 
 
+def require_row_index(dataframe: pd.DataFrame, row_index: int | None) -> int:
+    if row_index is None:
+        raise HTTPException(status_code=400, detail="A target row index is required.")
+
+    if row_index < 0 or row_index >= len(dataframe):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Row index '{row_index}' is out of range for this dataset.",
+        )
+
+    return row_index
+
+
+def coerce_cell_value(series: pd.Series, value: str):
+    dtype = series.dtype
+
+    if pd.api.types.is_integer_dtype(dtype) or pd.api.types.is_float_dtype(dtype):
+        try:
+            return pd.to_numeric(pd.Series([value]), errors="raise").iloc[0]
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Value '{value}' is not valid for numeric column '{series.name}'.",
+            ) from exc
+
+    if pd.api.types.is_bool_dtype(dtype):
+        normalized = value.strip().lower()
+        truthy = {"true", "1", "yes", "y"}
+        falsy = {"false", "0", "no", "n"}
+        if normalized in truthy:
+            return True
+        if normalized in falsy:
+            return False
+        raise HTTPException(
+            status_code=400,
+            detail=f"Value '{value}' is not valid for boolean column '{series.name}'.",
+        )
+
+    if pd.api.types.is_datetime64_any_dtype(dtype):
+        try:
+            return pd.to_datetime(value, errors="raise")
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Value '{value}' is not a valid datetime for column '{series.name}'.",
+            ) from exc
+
+    return value
+
+
 def apply_cleaning_action(
     dataframe: pd.DataFrame,
     action: str,
     column: str | None = None,
     value: str | None = None,
+    row_index: int | None = None,
 ) -> tuple[pd.DataFrame, str]:
     cleaned_dataframe = dataframe.copy()
 
@@ -246,6 +297,31 @@ def apply_cleaning_action(
         return (
             cleaned_dataframe,
             f"Filled {missing_before} missing value(s) in '{target_column}' with '{value}'.",
+        )
+
+    if action == "update_cell":
+        target_column = require_column(cleaned_dataframe, column)
+        target_row = require_row_index(cleaned_dataframe, row_index)
+        if value is None:
+            raise HTTPException(
+                status_code=400,
+                detail="A replacement value is required for cell updates.",
+            )
+
+        coerced_value = coerce_cell_value(cleaned_dataframe[target_column], value)
+        cleaned_dataframe.at[target_row, target_column] = coerced_value
+        return (
+            cleaned_dataframe,
+            f"Updated row {target_row + 1}, column '{target_column}'.",
+        )
+
+    if action == "clear_cell":
+        target_column = require_column(cleaned_dataframe, column)
+        target_row = require_row_index(cleaned_dataframe, row_index)
+        cleaned_dataframe.at[target_row, target_column] = pd.NA
+        return (
+            cleaned_dataframe,
+            f"Cleared row {target_row + 1}, column '{target_column}'.",
         )
 
     if action == "fill_missing_median":
@@ -310,10 +386,17 @@ async def clean_csv(
     action: str = Form(...),
     column: str | None = Form(default=None),
     value: str | None = Form(default=None),
+    row_index: int | None = Form(default=None),
 ):
     contents = await file.read()
     dataframe = read_uploaded_csv(file, contents)
-    cleaned_dataframe, message = apply_cleaning_action(dataframe, action, column, value)
+    cleaned_dataframe, message = apply_cleaning_action(
+        dataframe,
+        action,
+        column,
+        value,
+        row_index,
+    )
 
     return CleaningResponse(
         action=action,
