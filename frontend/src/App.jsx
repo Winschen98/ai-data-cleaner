@@ -1,10 +1,6 @@
 import { useRef, useState } from 'react'
 import './App.css'
 
-function isNumericDtype(dtype) {
-  return typeof dtype === 'string' && /(int|float|double|number|decimal)/i.test(dtype)
-}
-
 function formatActionLabel(action, options = {}) {
   const columnSuffix = options.column ? ` on ${options.column}` : ''
 
@@ -53,9 +49,6 @@ function normalizeAnalysis(payload) {
   const issues = Array.isArray(payload.issues)
     ? payload.issues.filter((issue) => issue && typeof issue === 'object')
     : []
-  const suggestedActions = Array.isArray(payload.suggested_actions)
-    ? payload.suggested_actions.filter((action) => typeof action === 'string')
-    : []
   const preview = Array.isArray(payload.preview)
     ? payload.preview.filter((row) => row && typeof row === 'object')
     : []
@@ -69,7 +62,6 @@ function normalizeAnalysis(payload) {
     missingValues,
     duplicateRows,
     issues,
-    suggestedActions,
     preview,
   }
 }
@@ -85,6 +77,8 @@ function App() {
   const [customFillValues, setCustomFillValues] = useState({})
   const [originalSnapshot, setOriginalSnapshot] = useState(null)
   const [history, setHistory] = useState([])
+  const [dismissedMissingColumns, setDismissedMissingColumns] = useState([])
+  const [duplicatesDismissed, setDuplicatesDismissed] = useState(false)
 
   function buildCleanedFilename(filename) {
     if (typeof filename !== 'string' || filename.trim() === '') {
@@ -138,6 +132,8 @@ function App() {
         analysis: normalizedAnalysis,
       })
       setHistory([])
+      setDismissedMissingColumns([])
+      setDuplicatesDismissed(false)
     } catch (requestError) {
       setError(requestError.message || 'Unable to analyze the CSV right now.')
     } finally {
@@ -154,6 +150,8 @@ function App() {
     setCustomFillValues({})
     setOriginalSnapshot(null)
     setHistory([])
+    setDismissedMissingColumns([])
+    setDuplicatesDismissed(false)
   }
 
   async function handleClean(action, options = {}) {
@@ -222,6 +220,8 @@ function App() {
 
       setAnalysis(normalizeAnalysis(payload.analysis))
       setCleaningMessage(nextCleaningMessage)
+      setDismissedMissingColumns([])
+      setDuplicatesDismissed(false)
       requestAnimationFrame(() => {
         previewRef.current?.scrollIntoView({
           behavior: 'smooth',
@@ -242,6 +242,20 @@ function App() {
     }))
   }
 
+  function handleLeaveEmpty(column) {
+    setDismissedMissingColumns((currentColumns) =>
+      currentColumns.includes(column) ? currentColumns : [...currentColumns, column],
+    )
+    setCleaningMessage(`Leaving missing values unchanged in '${column}'.`)
+    setError('')
+  }
+
+  function handleKeepDuplicates() {
+    setDuplicatesDismissed(true)
+    setCleaningMessage('Keeping exact duplicate rows in the current dataset.')
+    setError('')
+  }
+
   function handleUndo() {
     if (history.length === 0) {
       return
@@ -253,6 +267,8 @@ function App() {
     setAnalysis(previousSnapshot.analysis)
     setCleaningMessage('Reverted the most recent cleaning action.')
     setError('')
+    setDismissedMissingColumns([])
+    setDuplicatesDismissed(false)
   }
 
   function handleReset() {
@@ -265,6 +281,8 @@ function App() {
     setHistory([])
     setCleaningMessage('Reset to the original analyzed dataset.')
     setError('')
+    setDismissedMissingColumns([])
+    setDuplicatesDismissed(false)
   }
 
   function handleDownloadCurrentFile() {
@@ -293,6 +311,17 @@ function App() {
   const dtypeEntries = analysis ? Object.entries(analysis.dtypes) : []
   const missingValueEntries = analysis ? Object.entries(analysis.missingValues) : []
   const issues = analysis?.issues ?? []
+  const visibleIssues = issues.filter((issue) => {
+    if (issue.kind === 'duplicates' && duplicatesDismissed) {
+      return false
+    }
+
+    if (issue.kind !== 'missing_values' || !Array.isArray(issue.columns)) {
+      return true
+    }
+
+    return issue.columns.some((column) => !dismissedMissingColumns.includes(column))
+  })
 
   return (
     <main className="app-shell">
@@ -444,17 +473,21 @@ function App() {
 
               <article className="detail-card">
                 <h3>Detected issues</h3>
-                {issues.length > 0 ? (
+                {visibleIssues.length > 0 ? (
                   <div className="issue-list">
-                    {issues.map((issue, index) => (
-                      <article
-                        className={`issue-card severity-${issue.severity || 'low'}`}
-                        key={`${issue.kind || 'issue'}-${index}`}
-                      >
+                    {visibleIssues.map((issue, index) => {
+                      return (
+                        <article
+                          className={`issue-card severity-${issue.severity || 'low'}`}
+                          key={`${issue.kind || 'issue'}-${index}`}
+                        >
                         <div className="issue-heading">
                           <p className="issue-kicker">{issue.kind || 'issue'}</p>
                           <span>{issue.severity || 'low'} priority</span>
                         </div>
+                        <p className="issue-suggestion">
+                          {issue.suggestion || 'Review this dataset section before cleaning.'}
+                        </p>
                         <h4>{issue.title || 'Dataset issue detected'}</h4>
                         <p>{issue.detail || 'No detail provided.'}</p>
                         {Array.isArray(issue.columns) && issue.columns.length > 0 ? (
@@ -462,9 +495,6 @@ function App() {
                             Columns: {issue.columns.join(', ')}
                           </p>
                         ) : null}
-                        <p className="issue-suggestion">
-                          {issue.suggestion || 'Review this dataset section before cleaning.'}
-                        </p>
                         {issue.kind === 'date_candidate' &&
                         Array.isArray(issue.columns) &&
                         issue.columns.length > 0 ? (
@@ -494,23 +524,34 @@ function App() {
                             >
                               {isCleaning ? 'Removing duplicates...' : 'Remove exact duplicates'}
                             </button>
+                            <button
+                              className="secondary-action"
+                              type="button"
+                              onClick={handleKeepDuplicates}
+                              disabled={isCleaning || isLoading}
+                            >
+                              Keep duplicates
+                            </button>
                           </div>
                         ) : null}
                         {issue.kind === 'missing_values' &&
                         Array.isArray(issue.columns) &&
                         issue.columns.length > 0 ? (
                           <div className="column-action-groups">
-                            {issue.columns.map((column) => {
-                              const dtype = analysis.dtypes[column]
-                              const numericColumn = isNumericDtype(dtype)
+                            {issue.columns
+                              .filter((column) => !dismissedMissingColumns.includes(column))
+                              .map((column) => {
                               const customValue = customFillValues[column] ?? ''
 
                               return (
                                 <div className="column-action-card" key={`missing-${column}`}>
                                   <div className="column-action-header">
                                     <strong>{column}</strong>
-                                    <span>{dtype || 'unknown type'}</span>
+                                    <span>{analysis.dtypes[column] || 'unknown type'}</span>
                                   </div>
+                                  <p className="column-action-note">
+                                    Leave empty if missing values are valid for this column.
+                                  </p>
                                   <div className="inline-actions">
                                     <button
                                       className="secondary-action"
@@ -522,29 +563,14 @@ function App() {
                                     >
                                       Drop missing rows
                                     </button>
-                                    {numericColumn ? (
-                                      <button
-                                        className="secondary-action"
-                                        type="button"
-                                        onClick={() =>
-                                          handleClean('fill_missing_median', { column })
-                                        }
-                                        disabled={isCleaning || isLoading}
-                                      >
-                                        Fill with median
-                                      </button>
-                                    ) : (
-                                      <button
-                                        className="secondary-action"
-                                        type="button"
-                                        onClick={() =>
-                                          handleClean('fill_missing_mode', { column })
-                                        }
-                                        disabled={isCleaning || isLoading}
-                                      >
-                                        Fill with most common value
-                                      </button>
-                                    )}
+                                    <button
+                                      className="secondary-action"
+                                      type="button"
+                                      onClick={() => handleLeaveEmpty(column)}
+                                      disabled={isCleaning || isLoading}
+                                    >
+                                      Leave empty
+                                    </button>
                                   </div>
                                   <div className="custom-fill-row">
                                     <input
@@ -574,8 +600,9 @@ function App() {
                             })}
                           </div>
                         ) : null}
-                      </article>
-                    ))}
+                        </article>
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="empty-state-box">

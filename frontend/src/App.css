@@ -352,6 +352,12 @@
   margin-top: 16px;
 }
 
+.issue-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .column-action-groups {
   display: grid;
   gap: 14px;
@@ -380,6 +386,11 @@
 .column-action-header span {
   color: #41506a;
   font-size: 0.9rem;
+}
+
+.column-action-note {
+  margin: 0 0 12px;
+  color: #41506a;
 }
 
 .inline-actions {
