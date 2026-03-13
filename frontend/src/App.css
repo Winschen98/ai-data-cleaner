@@ -445,6 +445,11 @@
   overflow: hidden;
 }
 
+.preview-priority {
+  border-color: #bfdbfe;
+  box-shadow: 0 20px 60px rgba(37, 99, 235, 0.12);
+}
+
 .preview-header {
   display: flex;
   justify-content: space-between;

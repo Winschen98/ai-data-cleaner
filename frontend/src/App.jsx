@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import './App.css'
 
 function isNumericDtype(dtype) {
@@ -75,6 +75,7 @@ function normalizeAnalysis(payload) {
 }
 
 function App() {
+  const previewRef = useRef(null)
   const [selectedFile, setSelectedFile] = useState(null)
   const [analysis, setAnalysis] = useState(null)
   const [error, setError] = useState('')
@@ -221,6 +222,12 @@ function App() {
 
       setAnalysis(normalizeAnalysis(payload.analysis))
       setCleaningMessage(nextCleaningMessage)
+      requestAnimationFrame(() => {
+        previewRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        })
+      })
     } catch (requestError) {
       setError(requestError.message || 'Unable to clean the CSV right now.')
     } finally {
@@ -386,42 +393,51 @@ function App() {
             </div>
 
             <div className="details-grid insight-grid">
-              <article className="detail-card">
-                <h3>Applied changes</h3>
-                {history.length > 0 ? (
-                  <div className="history-list">
-                    {history.map((step, index) => (
-                      <article className="history-item" key={`${step.action}-${index}`}>
-                        <div className="history-step">
-                          <span>Step {index + 1}</span>
-                          <strong>{step.label}</strong>
-                        </div>
-                        <p className="history-copy">
-                          {step.message || 'Cleaning step applied to the working dataset.'}
-                        </p>
-                        <p className="history-meta">
-                          Rows after this step started: {step.analysis?.rows ?? 'Unknown'}
-                        </p>
-                      </article>
-                    ))}
-                    <article className="history-item current-step">
-                      <div className="history-step">
-                        <span>Current</span>
-                        <strong>Working dataset</strong>
-                      </div>
-                      <p className="history-copy">
-                        {cleaningMessage || 'This is the latest cleaned version of the dataset.'}
-                      </p>
-                      <p className="history-meta">
-                        Current rows: {analysis.rows} | Current columns: {analysis.columns}
-                      </p>
-                    </article>
+              <article className="detail-card preview-card preview-priority" ref={previewRef}>
+                <div className="preview-header">
+                  <div>
+                    <h3>Preview</h3>
+                    <p className="preview-copy">
+                      Showing up to the first five rows returned by the backend.
+                    </p>
+                  </div>
+                  {hasPreview ? (
+                    <p className="table-meta">
+                      {previewRows.length} row{previewRows.length === 1 ? '' : 's'} shown
+                    </p>
+                  ) : null}
+                </div>
+                {hasPreview ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          {previewColumns.map((column) => (
+                            <th key={column}>{column}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewRows.map((row, index) => (
+                          <tr key={index}>
+                            {previewColumns.map((column) => (
+                              <td key={`${index}-${column}`}>
+                                {row[column] == null || row[column] === ''
+                                  ? 'Empty'
+                                  : String(row[column])}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 ) : (
                   <div className="empty-state-box">
-                    <p className="empty-state-title">No changes applied yet</p>
+                    <p className="empty-state-title">No preview available</p>
                     <p className="empty-state">
-                      Cleaning steps you apply will appear here as a running history.
+                      The dataset summary loaded, but the server did not return any
+                      preview rows we could display.
                     </p>
                   </div>
                 )}
@@ -591,6 +607,47 @@ function App() {
               </article>
             </div>
 
+            <article className="detail-card">
+              <h3>Applied changes</h3>
+              {history.length > 0 ? (
+                <div className="history-list">
+                  {history.map((step, index) => (
+                    <article className="history-item" key={`${step.action}-${index}`}>
+                      <div className="history-step">
+                        <span>Step {index + 1}</span>
+                        <strong>{step.label}</strong>
+                      </div>
+                      <p className="history-copy">
+                        {step.message || 'Cleaning step applied to the working dataset.'}
+                      </p>
+                      <p className="history-meta">
+                        Rows after this step started: {step.analysis?.rows ?? 'Unknown'}
+                      </p>
+                    </article>
+                  ))}
+                  <article className="history-item current-step">
+                    <div className="history-step">
+                      <span>Current</span>
+                      <strong>Working dataset</strong>
+                    </div>
+                    <p className="history-copy">
+                      {cleaningMessage || 'This is the latest cleaned version of the dataset.'}
+                    </p>
+                    <p className="history-meta">
+                      Current rows: {analysis.rows} | Current columns: {analysis.columns}
+                    </p>
+                  </article>
+                </div>
+              ) : (
+                <div className="empty-state-box">
+                  <p className="empty-state-title">No changes applied yet</p>
+                  <p className="empty-state">
+                    Cleaning steps you apply will appear here as a running history.
+                  </p>
+                </div>
+              )}
+            </article>
+
             <div className="details-grid">
               <article className="detail-card">
                 <h3>Column names</h3>
@@ -643,56 +700,6 @@ function App() {
                 )}
               </article>
             </div>
-
-            <article className="detail-card preview-card">
-              <div className="preview-header">
-                <div>
-                  <h3>Preview</h3>
-                  <p className="preview-copy">
-                    Showing up to the first five rows returned by the backend.
-                  </p>
-                </div>
-                {hasPreview ? (
-                  <p className="table-meta">
-                    {previewRows.length} row{previewRows.length === 1 ? '' : 's'} shown
-                  </p>
-                ) : null}
-              </div>
-              {hasPreview ? (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        {previewColumns.map((column) => (
-                          <th key={column}>{column}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewRows.map((row, index) => (
-                        <tr key={index}>
-                          {previewColumns.map((column) => (
-                            <td key={`${index}-${column}`}>
-                              {row[column] == null || row[column] === ''
-                                ? 'Empty'
-                                : String(row[column])}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="empty-state-box">
-                  <p className="empty-state-title">No preview available</p>
-                  <p className="empty-state">
-                    The dataset summary loaded, but the server did not return any
-                    preview rows we could display.
-                  </p>
-                </div>
-              )}
-            </article>
           </>
         ) : (
           <div className="empty-panel">
