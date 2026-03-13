@@ -1,6 +1,42 @@
 import { useState } from 'react'
 import './App.css'
 
+function normalizeAnalysis(payload) {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('The server returned an invalid analysis response.')
+  }
+
+  const filename =
+    typeof payload.filename === 'string' && payload.filename.trim()
+      ? payload.filename
+      : 'Uploaded dataset'
+
+  const rows = Number.isFinite(payload.rows) ? payload.rows : 0
+  const columns = Number.isFinite(payload.columns) ? payload.columns : 0
+  const columnNames = Array.isArray(payload.column_names)
+    ? payload.column_names.filter((column) => typeof column === 'string')
+    : []
+  const dtypes =
+    payload.dtypes && typeof payload.dtypes === 'object' ? payload.dtypes : {}
+  const missingValues =
+    payload.missing_values && typeof payload.missing_values === 'object'
+      ? payload.missing_values
+      : {}
+  const preview = Array.isArray(payload.preview)
+    ? payload.preview.filter((row) => row && typeof row === 'object')
+    : []
+
+  return {
+    filename,
+    rows,
+    columns,
+    columnNames,
+    dtypes,
+    missingValues,
+    preview,
+  }
+}
+
 function App() {
   const [selectedFile, setSelectedFile] = useState(null)
   const [analysis, setAnalysis] = useState(null)
@@ -28,13 +64,18 @@ function App() {
         body: formData,
       })
 
-      const payload = await response.json()
+      let payload = null
+      try {
+        payload = await response.json()
+      } catch {
+        throw new Error('The server returned a non-JSON response.')
+      }
 
       if (!response.ok) {
         throw new Error(payload.detail || 'Analysis failed.')
       }
 
-      setAnalysis(payload)
+      setAnalysis(normalizeAnalysis(payload))
     } catch (requestError) {
       setError(requestError.message || 'Unable to analyze the CSV right now.')
     } finally {
@@ -48,6 +89,19 @@ function App() {
     setError('')
     setAnalysis(null)
   }
+
+  const columnNames = analysis?.columnNames ?? []
+  const previewRows = analysis?.preview ?? []
+  const previewColumns =
+    columnNames.length > 0
+      ? columnNames
+      : Array.from(
+          new Set(previewRows.flatMap((row) => Object.keys(row ?? {}))),
+        )
+  const hasPreview = previewRows.length > 0 && previewColumns.length > 0
+  const hasColumnMetadata = columnNames.length > 0
+  const dtypeEntries = analysis ? Object.entries(analysis.dtypes) : []
+  const missingValueEntries = analysis ? Object.entries(analysis.missingValues) : []
 
   return (
     <main className="app-shell">
@@ -106,56 +160,88 @@ function App() {
             <div className="details-grid">
               <article className="detail-card">
                 <h3>Column names</h3>
-                <ul className="pill-list">
-                  {analysis.column_names.map((column) => (
-                    <li key={column}>{column}</li>
-                  ))}
-                </ul>
+                {hasColumnMetadata ? (
+                  <ul className="pill-list">
+                    {columnNames.map((column) => (
+                      <li key={column}>{column}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="empty-state">
+                    No column names were returned for this dataset.
+                  </p>
+                )}
               </article>
 
               <article className="detail-card">
                 <h3>Missing values</h3>
-                <dl className="stats-list">
-                  {Object.entries(analysis.missing_values).map(([column, count]) => (
-                    <div key={column}>
-                      <dt>{column}</dt>
-                      <dd>{count}</dd>
-                    </div>
-                  ))}
-                </dl>
+                {missingValueEntries.length > 0 ? (
+                  <dl className="stats-list">
+                    {missingValueEntries.map(([column, count]) => (
+                      <div key={column}>
+                        <dt>{column}</dt>
+                        <dd>{count}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <p className="empty-state">
+                    Missing-value counts were not included in the response.
+                  </p>
+                )}
               </article>
 
               <article className="detail-card">
                 <h3>Detected types</h3>
-                <dl className="stats-list">
-                  {Object.entries(analysis.dtypes).map(([column, dtype]) => (
-                    <div key={column}>
-                      <dt>{column}</dt>
-                      <dd>{dtype}</dd>
-                    </div>
-                  ))}
-                </dl>
+                {dtypeEntries.length > 0 ? (
+                  <dl className="stats-list">
+                    {dtypeEntries.map(([column, dtype]) => (
+                      <div key={column}>
+                        <dt>{column}</dt>
+                        <dd>{dtype}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <p className="empty-state">
+                    Column type information was not included in the response.
+                  </p>
+                )}
               </article>
             </div>
 
             <article className="detail-card preview-card">
-              <h3>Preview</h3>
-              {analysis.preview.length > 0 ? (
+              <div className="preview-header">
+                <div>
+                  <h3>Preview</h3>
+                  <p className="preview-copy">
+                    Showing up to the first five rows returned by the backend.
+                  </p>
+                </div>
+                {hasPreview ? (
+                  <p className="table-meta">
+                    {previewRows.length} row{previewRows.length === 1 ? '' : 's'} shown
+                  </p>
+                ) : null}
+              </div>
+              {hasPreview ? (
                 <div className="table-wrap">
                   <table>
                     <thead>
                       <tr>
-                        {analysis.column_names.map((column) => (
+                        {previewColumns.map((column) => (
                           <th key={column}>{column}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {analysis.preview.map((row, index) => (
+                      {previewRows.map((row, index) => (
                         <tr key={index}>
-                          {analysis.column_names.map((column) => (
+                          {previewColumns.map((column) => (
                             <td key={`${index}-${column}`}>
-                              {row[column] == null ? 'Empty' : String(row[column])}
+                              {row[column] == null || row[column] === ''
+                                ? 'Empty'
+                                : String(row[column])}
                             </td>
                           ))}
                         </tr>
@@ -164,7 +250,13 @@ function App() {
                   </table>
                 </div>
               ) : (
-                <p className="empty-state">No preview rows were returned.</p>
+                <div className="empty-state-box">
+                  <p className="empty-state-title">No preview available</p>
+                  <p className="empty-state">
+                    The dataset summary loaded, but the server did not return any
+                    preview rows we could display.
+                  </p>
+                </div>
               )}
             </article>
           </>
