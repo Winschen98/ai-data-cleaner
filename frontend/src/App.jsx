@@ -397,32 +397,14 @@ function App() {
             </p>
             <div className="primary-actions">
               {analysis ? (
-                <>
-                  <button
-                    className="download-action"
-                    type="button"
-                    onClick={handleDownloadCurrentFile}
-                    disabled={isLoading || isCleaning || !selectedFile}
-                  >
-                    Download current CSV
-                  </button>
-                  <button
-                    className="download-action"
-                    type="button"
-                    onClick={handleUndo}
-                    disabled={isLoading || isCleaning || history.length === 0}
-                  >
-                    Undo last step
-                  </button>
-                  <button
-                    className="download-action"
-                    type="button"
-                    onClick={handleReset}
-                    disabled={isLoading || isCleaning || !originalSnapshot}
-                  >
-                    Reset to original
-                  </button>
-                </>
+                <button
+                  className="download-action"
+                  type="button"
+                  onClick={handleDownloadCurrentFile}
+                  disabled={isLoading || isCleaning || !selectedFile}
+                >
+                  Download current CSV
+                </button>
               ) : null}
               <button type="submit" disabled={isLoading}>
                 {isLoading ? 'Analyzing...' : 'Analyze dataset'}
@@ -431,16 +413,7 @@ function App() {
           </div>
         </form>
 
-        {analysis ? (
-          <p className="workspace-meta">
-            {history.length > 0
-              ? `${history.length} change${history.length === 1 ? '' : 's'} available to undo.`
-              : 'You are viewing the current working dataset.'}
-          </p>
-        ) : null}
-
         {error ? <p className="status error">{error}</p> : null}
-        {cleaningMessage ? <p className="status success">{cleaningMessage}</p> : null}
       </section>
 
       <section className="results-panel">
@@ -485,9 +458,29 @@ function App() {
                 <div className="preview-history-shell">
                   {history.length > 0 ? (
                     <div className="preview-history">
-                      <p className="preview-history-label">
-                        Recent changes ({history.length})
-                      </p>
+                      <div className="preview-history-top">
+                        <p className="preview-history-label">
+                          Recent changes ({history.length})
+                        </p>
+                        <div className="preview-history-actions">
+                          <button
+                            className="history-action"
+                            type="button"
+                            onClick={handleUndo}
+                            disabled={isLoading || isCleaning || history.length === 0}
+                          >
+                            Undo last step
+                          </button>
+                          <button
+                            className="history-action"
+                            type="button"
+                            onClick={handleReset}
+                            disabled={isLoading || isCleaning || !originalSnapshot}
+                          >
+                            Reset to original
+                          </button>
+                        </div>
+                      </div>
                       <div className="preview-history-list">
                         {history.map((step, index) => (
                           <article
