@@ -1,5 +1,6 @@
 from io import BytesIO
 
+import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
@@ -38,17 +39,23 @@ async def analyze_csv(file: UploadFile = File(...)):
             detail="The uploaded file is not valid UTF-8 text.",
         ) from exc
 
+    # compute missing counts from the original dataframe
+    missing_values = {
+        column: int(count)
+        for column, count in dataframe.isna().sum().to_dict().items()
+    }
+
+    # prepare a JSON-safe preview by replacing NaN/NA with None
+    preview = dataframe.head(5).replace({np.nan: None, pd.NA: None}).to_dict(
+        orient="records"
+    )
+
     return {
         "filename": file.filename,
         "rows": int(len(dataframe)),
         "columns": int(len(dataframe.columns)),
         "column_names": dataframe.columns.tolist(),
         "dtypes": {column: str(dtype) for column, dtype in dataframe.dtypes.items()},
-        "missing_values": {
-            column: int(count)
-            for column, count in dataframe.isna().sum().to_dict().items()
-        },
-        "preview": dataframe.head(5).where(pd.notnull(dataframe.head(5)), None).to_dict(
-            orient="records"
-        ),
+        "missing_values": missing_values,
+        "preview": preview,
     }
