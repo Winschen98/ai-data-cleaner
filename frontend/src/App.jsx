@@ -22,6 +22,15 @@ function normalizeAnalysis(payload) {
     payload.missing_values && typeof payload.missing_values === 'object'
       ? payload.missing_values
       : {}
+  const duplicateRows = Number.isFinite(payload.duplicate_rows)
+    ? payload.duplicate_rows
+    : 0
+  const issues = Array.isArray(payload.issues)
+    ? payload.issues.filter((issue) => issue && typeof issue === 'object')
+    : []
+  const suggestedActions = Array.isArray(payload.suggested_actions)
+    ? payload.suggested_actions.filter((action) => typeof action === 'string')
+    : []
   const preview = Array.isArray(payload.preview)
     ? payload.preview.filter((row) => row && typeof row === 'object')
     : []
@@ -33,6 +42,9 @@ function normalizeAnalysis(payload) {
     columnNames,
     dtypes,
     missingValues,
+    duplicateRows,
+    issues,
+    suggestedActions,
     preview,
   }
 }
@@ -102,6 +114,8 @@ function App() {
   const hasColumnMetadata = columnNames.length > 0
   const dtypeEntries = analysis ? Object.entries(analysis.dtypes) : []
   const missingValueEntries = analysis ? Object.entries(analysis.missingValues) : []
+  const issues = analysis?.issues ?? []
+  const suggestedActions = analysis?.suggestedActions ?? []
 
   return (
     <main className="app-shell">
@@ -154,7 +168,67 @@ function App() {
                   <span>Columns</span>
                   <strong>{analysis.columns}</strong>
                 </article>
+                <article>
+                  <span>Duplicates</span>
+                  <strong>{analysis.duplicateRows}</strong>
+                </article>
               </div>
+            </div>
+
+            <div className="details-grid insight-grid">
+              <article className="detail-card">
+                <h3>Detected issues</h3>
+                {issues.length > 0 ? (
+                  <div className="issue-list">
+                    {issues.map((issue, index) => (
+                      <article
+                        className={`issue-card severity-${issue.severity || 'low'}`}
+                        key={`${issue.kind || 'issue'}-${index}`}
+                      >
+                        <div className="issue-heading">
+                          <p className="issue-kicker">{issue.kind || 'issue'}</p>
+                          <span>{issue.severity || 'low'} priority</span>
+                        </div>
+                        <h4>{issue.title || 'Dataset issue detected'}</h4>
+                        <p>{issue.detail || 'No detail provided.'}</p>
+                        {Array.isArray(issue.columns) && issue.columns.length > 0 ? (
+                          <p className="issue-columns">
+                            Columns: {issue.columns.join(', ')}
+                          </p>
+                        ) : null}
+                        <p className="issue-suggestion">
+                          {issue.suggestion || 'Review this dataset section before cleaning.'}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state-box">
+                    <p className="empty-state-title">No issues flagged</p>
+                    <p className="empty-state">
+                      This dataset did not trigger any lightweight heuristics yet.
+                    </p>
+                  </div>
+                )}
+              </article>
+
+              <article className="detail-card">
+                <h3>Suggested actions</h3>
+                {suggestedActions.length > 0 ? (
+                  <ol className="action-list">
+                    {suggestedActions.map((action) => (
+                      <li key={action}>{action}</li>
+                    ))}
+                  </ol>
+                ) : (
+                  <div className="empty-state-box">
+                    <p className="empty-state-title">No actions suggested</p>
+                    <p className="empty-state">
+                      Upload another dataset or expand the backend heuristics to surface more guidance.
+                    </p>
+                  </div>
+                )}
+              </article>
             </div>
 
             <div className="details-grid">
